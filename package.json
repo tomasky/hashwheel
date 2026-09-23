@@ -1,13 +1,15 @@
 {
-  "name": "consistent-hash",
-  "version": "1.3.0",
+  "name": "hashwheel",
+  "version": "1.5.0",
   "description": "js consistent hash ring",
   "license": "Apache-2.0",
+  "type": "module",
+  "main": "consistenthash.js",
+  "exports": "./consistenthash.js",
   "repository": {
     "type": "git",
     "url": "git://github.com/andrasq/consistent-hash-js"
   },
-  "main": "consistent-hash.js",
   "author": {
     "name": "Andras",
     "url": "http://github.com/andrasq"
@@ -19,18 +21,17 @@
     "hashing",
     "hash ring"
   ],
-  "files": ["LICENSE", "Readme.md", "consistent-hash.js", "test-consistent-hash.js"],
-  "readme": "see Readme.md in the repo",
-
+  "files": ["LICENSE", "README.md", "consistenthash.js", "test-consistent-hash.js", "benchmark.js"],
+  "readme": "see README.md in the repo",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
   },
-  "devDependencies": {
-    "qnit": "0.30.0"
-  },
-
   "scripts": {
-    "test": "qnit test-consistent-hash.js",
-    "coverage": "nyc -r text -r lcov npm test",
-    "clean": "rm -rf .nyc_output coverage"
+    "test": "node --test test-consistent-hash.js",
+    "benchmark": "node benchmark.js",
+    "coverage": "mkdir -p coverage && node --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info test-consistent-hash.js",
+    "clean": "rm -rf coverage .nyc_output"
   }
 }

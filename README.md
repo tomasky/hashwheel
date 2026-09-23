@@ -1,5 +1,5 @@
-consistent-hash
-===============
+hashwheel
+=========
 [![Build Status](https://github.com/andrasq/consistent-hash-js/actions/workflows/nodejs.yml/badge.svg)](https://github.com/andrasq/consistent-hash-js/actions/workflows/nodejs.yml)
 [![Coverage Status](https://coveralls.io/repos/github/andrasq/consistent-hash-js/badge.svg?branch=master)](https://coveralls.io/github/andrasq/consistent-hash-js?branch=master)
 
@@ -9,18 +9,22 @@ ring.  Uses strings for hash keys, and hashes using a PJW hash variant.
 
 This implementation is pretty fast, and has a nice key distribution.
 
-        var ConsistentHash = require('consistent-hash')
-        var hr = new ConsistentHash()
+This package is ESM-only (`"type": "module"`) and needs Node.js 20 or newer.
+Use `import`; `require` is not supported.
+
+        import ConsistentHash from 'hashwheel'
+
+        const hr = new ConsistentHash()
         hr.add('server1')
         hr.add('server2')
 
-        var serverToUse = hr.get('resourceName')
+        const serverToUse = hr.get('resourceName')
 
 
 Installation
 ------------
 
-        npm install consistent-hash
+        pnpm install hashwheel
 
 
 API
@@ -41,8 +45,12 @@ Options:
 - `nodes` - an array of strings with nodes to add.  This is for convenience, it just adds the nodes
   one at a time with `this.add()`.  Default is none.
 
-The number of nodes supported is `range / weight`, default 2500.  For
-10x more nodes, use a wider range like 1,000,003 or a smaller weight like 4.
+The theoretical number of nodes supported is `range / weight`, default 2500,
+but that is a full ring and cannot be reached: control points are placed by
+probabilistic collision detection, so a ring that is too full runs out of free
+points.  In practice about 90% of the ring can be filled, eg roughly 2300 nodes
+with the defaults (range 100003, weight 40).  For 10x more nodes, use a wider
+range like 1,000,003 or a smaller weight like 4.
 
 Properties:
 

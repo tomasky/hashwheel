@@ -1,76 +1,63 @@
-var ConsistentHash = require('./')
-var nbins = [2, 3, 5, 10, 16, 17, 20, 32, 40, 50, 100, 127, 128, 256, 257]
-var nbins = [4, 10, 100];
+/**
+ * consistent-hash -- key distribution probe (dev tool)
+ *
+ * Copyright (C) 2015-2016,2021,2023 Andras Radics
+ * Licensed under the Apache License, Version 2.0
+ *
+ * Run with:  node test-distribution.js
+ * Prints how evenly a set of generated keys spreads across N nodes.
+ */
+
+import ConsistentHash from './consistenthash.js'
+
+var NBINS = [4, 10, 100]
 
 function distribute( data, nbins ) {
     var i, hr = new ConsistentHash()
 
     // add nbins nodes distributed uniformly around the ring
     // note: random control points will badly skew the distribution
-    //for (i=0; i<nbins; i++) hr.add(i, 1, [(i / nbins * hr._range) >>> 0])
     for (i=0; i<nbins; i++) hr.add(i)
 
     // create bins to count the number of times each node showed up
-    var bins = new Array(nbins)
-    for (i=0; i<bins.length; i++) bins[i] = 0
+    var bins = new Array(nbins).fill(0)
 
     // hash the data to nodes, track distribution in the bins
-    for (i=0; i<data.length; i++) {
-        var node = hr.get(data[i])
-        bins[node] += 1
-    }
+    for (i=0; i<data.length; i++) bins[hr.get(data[i])] += 1
 
     return bins
 }
 
-function testDistribution( t, fn ) {
+function testDistribution( name, fn ) {
     var i, data = []
-    for (i=0; i<10000; i++) {
-        data[i] = fn(i)
-    }
-console.log(fn.toString())
-    for (var j=0; j<nbins.length; j++) {
-        var bins = distribute(data, nbins[j])
+    for (i=0; i<10000; i++) data[i] = fn(i)
+
+    console.log(name)
+    for (var j=0; j<NBINS.length; j++) {
+        var bins = distribute(data, NBINS[j])
         bins.sort(function(a, b) { return a - b })
-        var empty = 0;
-        for (var i=0; i<bins.length; i++) if (!bins[i]) empty += 1
+        var empty = 0
+        for (var k=0; k<bins.length; k++) if (!bins[k]) empty += 1
         empty = (empty / bins.length * 100) >>> 0
-console.log("AR: %d nodes %d%% empty", bins.length, empty, bins.slice(0, 10), "...", bins.slice(-10))
-        //t.ok(bins[0] * 10 > bins[bins.length - 1])
+        console.log("  %d nodes  %d%% empty  min=%d max=%d",
+            bins.length, empty, bins[0], bins[bins.length - 1])
     }
 }
 
-function str_repeat( s, n ) {
+function strRepeat( s, n ) {
     var ret = ""
     for (var i=0; i<n; i++) ret += s
     return ret
 }
 
-module.exports = {
-    'numbers': function(t) {
-        testDistribution(t, function(i) { return Math.random() * 1000000 >>> 0 })
-        testDistribution(t, function(i) { return "" + i })
-        testDistribution(t, function(i) { return "" + i + i + i + i})
-        testDistribution(t, function(i) { return "12345678" + i })
-        t.done()
-    },
-
-    'numeric suffixes': function(t) {
-        testDistribution(t, function(i) { return 'a' + i })
-        testDistribution(t, function(i) { return 'someLongishPrefix' + i })
-        testDistribution(t, function(i) { return 'someLongishPrefix' + i + i + i + i})
-        t.done()
-    },
-
-    'various length strings': function(t) {
-        testDistribution(t, function(i) { return str_repeat(String.fromCharCode(0x65 + i%26), 1 + i/26) })
-        testDistribution(t, function(i) { return str_repeat('abcdefghij', 1 + i/20) })
-        t.done()
-    },
-
-    'random strings': function(t) {
-        testDistribution(t, function(i) { x = (Math.random() * 100000).toString(36).replace(/[0-9]/, ''); return x })
-        testDistribution(t, function(i) { x = (Math.random() * 100000).toString(36).replace(/[0-9]/, ''); return x + x + x + x })
-        t.done()
-    },
-}
+testDistribution('numbers: random', function() { return Math.random() * 1000000 >>> 0 })
+testDistribution('numbers: decimal', function(i) { return "" + i })
+testDistribution('numbers: repeated', function(i) { return "" + i + i + i + i })
+testDistribution('numbers: prefix', function(i) { return "12345678" + i })
+testDistribution('numeric suffixes: a+i', function(i) { return 'a' + i })
+testDistribution('numeric suffixes: long prefix', function(i) { return 'someLongishPrefix' + i })
+testDistribution('numeric suffixes: repeated', function(i) { return 'someLongishPrefix' + i + i + i + i })
+testDistribution('various length: single char', function(i) { return strRepeat(String.fromCharCode(0x65 + i%26), 1 + i/26) })
+testDistribution('various length: repeated block', function(i) { return strRepeat('abcdefghij', 1 + i/20) })
+testDistribution('random strings: short', function() { var x = (Math.random() * 100000).toString(36).replace(/[0-9]/, ''); return x })
+testDistribution('random strings: long', function() { var x = (Math.random() * 100000).toString(36).replace(/[0-9]/, ''); return x + x + x + x })

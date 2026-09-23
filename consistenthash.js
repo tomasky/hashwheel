@@ -12,8 +12,6 @@
  * in https://github.com/andrasq/quicklib/
  */
 
-'use strict'
-
 function ConsistentHash( options ) {
     this._nodes = new Array()
     this._nodeKeys = new Array()
@@ -49,8 +47,8 @@ ConsistentHash.prototype = {
      */
     add:
     function add( node, n, points ) {
-        var i, key
-        if (Array.isArray(points)) points = this._concat2(new Array(), points)
+        // copy a caller-supplied points array so it stays private to the ring
+        if (Array.isArray(points)) points = points.slice()
         else if (this._uniform) { this._needKeyMap = true; points = new Array(n || this._weightDefault) }
         else points = this._makeControlPoints(n || this._weightDefault)
         this._nodes.push(node)
@@ -63,24 +61,19 @@ ConsistentHash.prototype = {
         return this
     },
 
-    _concat2:
-    function _concat2( target, array ) {
-        for (var i = 0; i < array.length; i++) target.push(array[i])
-        return target
-    },
-
     _makeControlPoints:
     function _makeControlPoints( n ) {
-        var attemptCount = 0
+        // a prior remove() invalidated the keyMap; rebuild it before probing for free points
+        if (this._needKeyMap) this._buildKeyMap(this._weightDefault)
         var i, key, points = new Array(n)
         for (i=0; i<n; i++) {
             // use probabilistic collision detection: ok for up to millions
+            // bound the retries per point, not across the whole batch
+            var attemptCount = 0
             do {
                 key = Math.random() * this._range >>> 0
-            } while ((this._keyMap[key] !== undefined || points[key] === 'a') && ++attemptCount < 100)
-            // adding the always-false ( == 'a') test above doubles throughput ??
+            } while (this._keyMap[key] !== undefined && ++attemptCount < 100)
             if (attemptCount >= 100) throw new Error("unable to find an unused control point, tried 100")
-            // reuse control points after 1000 failed attempts.  This will shadow another node.
             points[i] = key
             // reserve the point to not reuse, not even for this node
             this._keyMap[key] = true
@@ -293,15 +286,17 @@ ConsistentHash.prototype = {
     // TODO: also rebuild the _keyMap points-to-nodes lookup
     _buildKeys:
     function _buildKeys( ) {
-        var i, j, nodeKeys, keys = new Array()
+        var i, j, k = 0, nodeKeys, keys = new Array(this.keyCount)
         for (i=0; i<this._nodeKeys.length; i++) {
             nodeKeys = this._nodeKeys[i]
             for (j=0; j<nodeKeys.length; j++) {
-                keys.push(nodeKeys[j])
+                keys[k++] = nodeKeys[j]
             }
         }
+        // keyCount can be out of sync if the arrays were edited directly
+        if (k !== keys.length) keys.length = k
         // note: duplicate keys are not filtered out, but should work ok
-        keys.sort(function(a,b){ return a - b })
+        keys.sort(comparePoints)
         return this._keys = keys
     },
 
@@ -326,4 +321,9 @@ function addNodesArray( hashRing, nodes ) {
     for (var i = 0; i < nodes.length; i++) hashRing.add(nodes[i]);
 }
 
-module.exports = ConsistentHash
+// numeric ascending order; hoisted so the sort does not allocate a closure per rebuild
+function comparePoints( a, b ) {
+    return a - b
+}
+
+export default ConsistentHash
