@@ -1,5 +1,5 @@
 /**
- * consistent-hash -- simple, quick, efficient hash ring (consistent hashing)
+ * hashwheel -- simple, quick, efficient hash ring (consistent hashing)
  *
  * Copyright (C) 2014-2015,2021,2023 Andras Radics
  * Licensed under the Apache License, Version 2.0
@@ -17,7 +17,10 @@ function ConsistentHash( options ) {
     this._nodeKeys = new Array()
     this._keyMap = {}
     this._keys = null
+    this._nodesSorted = null
     this._needKeyMap = false
+    this._cache = null
+    this._cacheMax = 0
     this.nodeCount = 0
     this.keyCount = 0
 
@@ -26,6 +29,7 @@ function ConsistentHash( options ) {
     if (options.controlPoints || options.weight) this._weightDefault = options.controlPoints || options.weight
     if (options.distribution === 'uniform') this._uniform = true
     if (options.orderNodes) this._orderNodes = options.orderNodes
+    if (options.cache > 0) { this._cacheMax = options.cache >>> 0; this._cache = new LruCache(this._cacheMax) }
     // nb: calling methods on `this` from inside the constructor might not be supported in some browsers
     if (Array.isArray(options.nodes)) addNodesArray(this, options.nodes);
 }
@@ -36,6 +40,9 @@ ConsistentHash.prototype = {
     _keyMap: null,              // control point to node map
     // sorted keys array will be regenerated whenever set to falsy
     _keys: null,                // array of sorted control points
+    _nodesSorted: null,         // node owning each entry of _keys, parallel array for the hot lookup
+    _cache: null,               // optional bounded lookup cache, enabled with options.cache
+    _cacheMax: 0,               // max entries held in the lookup cache
     _range: 100003,             // hash ring capacity.  Smaller values (1k) distribute better (100k)
                                 // ok values: 1009:1, 5003, 9127, 1000003:97
     _weightDefault: 40,         // number of control points to create per node
@@ -56,6 +63,8 @@ ConsistentHash.prototype = {
         n = points.length
         if (points[0] !== undefined) this._mapNodePoints(node, points)
         this._keys = null
+        this._nodesSorted = null
+        if (this._cache) this._cache.clear()
         this.keyCount += n
         this.nodeCount += 1
         return this
@@ -138,6 +147,8 @@ ConsistentHash.prototype = {
             this._nodeKeys[ix] = this._nodeKeys[this._nodeKeys.length - 1]
             this._nodeKeys.length -= 1
             this._keys = null
+            this._nodesSorted = null
+            if (this._cache) this._cache.clear()
             this._needKeyMap = true
             this._keyMap = null
             this.nodeCount -= 1
@@ -154,8 +165,19 @@ ConsistentHash.prototype = {
     function get( name, count ) {
         if (count) return this._getMany(name, count);
         if (!this.keyCount) return null
-        var index = this._locate(name)
-        return this._keyMap[this._keys[index]]
+        if (typeof name !== 'string') name = "" + name
+        var cache = this._cache
+        if (cache) {
+            // cache.get() also refreshes recency
+            var hit = cache.get(name)
+            if (hit !== undefined) return hit
+        }
+        // inline of _locate, this is the hot path
+        if (this._needKeyMap) this._buildKeyMap(this._weightDefault)
+        if (!this._keys) this._buildKeys()
+        var node = this._nodesSorted[this._absearch(this._keys, this._hash(name) % this._range)]
+        if (cache) cache.set(name, node)
+        return node
     },
 
     // return the first n distinct nodes in the hash ring after name
@@ -165,11 +187,11 @@ ConsistentHash.prototype = {
         var index = this._locate(name)
         var node, nodes = [];
         for (var i=index; i<this.keyCount && nodes.length < n; i++) {
-            node = this._keyMap[this._keys[i]];
+            node = this._nodesSorted[i];
             if (nodes.indexOf(node) < 0) nodes.push(node);
         }
         for (var i=0; i<index && nodes.length < n; i++) {
-            node = this._keyMap[this._keys[i]];
+            node = this._nodesSorted[i];
             if (nodes.indexOf(node) < 0) nodes.push(node);
         }
         return nodes;
@@ -201,41 +223,45 @@ ConsistentHash.prototype = {
 
         if (typeof name !== 'string') name = "" + name
         if (!this._keys) this._buildKeys()
-        var h = this._hash(name)
-
-        // scaling up the hash distributes better for larger _range values
-        h = h << 5
-
-        // the mod counters the lsbyte too closely tracking the input suffix
-        h = h % this._range
-
-        return this._absearch(this._keys, h)
+        // murmur3 returns a uint32; the (prime) range modulus spreads it around the ring
+        return this._absearch(this._keys, this._hash(name) % this._range)
     },
 
-    // 24-bit PJW string hash variant, see https://en.wikipedia.org/wiki/PJW_hash_function
-    // pjw seems to work better than crc24 for the test cases in the unit tests
+    // MurmurHash3 (x86 32-bit) variant.  Math.imul makes the 32-bit multiplies
+    // cheap, and consuming two UTF-16 code units per round makes it much faster
+    // than the old byte-at-a-time PJW hash on long keys.  The hash does not have
+    // to be perfect, just well distributed; the ring takes it mod a prime range.
     _hash:
-    function _pjwHash(s) {
+    function _murmur3(s) {
+        var c1 = 0xcc9e2d51, c2 = 0x1b873593
         var len = s.length
-        var g, h = 0
-        // TODO: speed up the hash computation for long strings
-        // the hash does not have to be perfect, just well distributed
-        for (var i=0; i<len; i++) {
-            h = (h << 4) + s.charCodeAt(i)
-            g = h & 0xff000000          // isolate high 4 bits and overflow
-            // PJW grabs bits 28..31 and xors them into the high nybble bits 4-7
-            // we grab bits 24-28 and xor them into the low nybble bits 0-3,
-            // seems to result in a less poor distribution taken mod 2^N, N>3.
-            if (g) {
-                h &= ~g                 // clear high 4 bits
-                h ^= (g >>> 24)         // xor high 4 bits into low byte
-            }
+        var i = 0, k, h = 0
+        // main loop: 4 bytes (two code units) at a time
+        for ( ; i + 1 < len; i += 2) {
+            k = s.charCodeAt(i) | (s.charCodeAt(i + 1) << 16)
+            k = Math.imul(k, c1)
+            k = (k << 15) | (k >>> 17)
+            k = Math.imul(k, c2)
+            h ^= k
+            h = (h << 13) | (h >>> 19)
+            h = (Math.imul(h, 5) + 0xe6546b64) | 0
         }
-        // for well distributed input, h has a good distribution in the lsbs
-        // but for correlated input eg /a[0-9]+/ it is skewed and caller must fix
-        // Taking h % prime seems to work well, esp for smallish primes (1009, 10007)
-        // Conversely, taking h % 2^N (N>3) results in a very skewed distribution.
-        return h
+        // tail: one leftover code unit
+        if (i < len) {
+            k = s.charCodeAt(i)
+            k = Math.imul(k, c1)
+            k = (k << 15) | (k >>> 17)
+            k = Math.imul(k, c2)
+            h ^= k
+        }
+        // finalization mix
+        h ^= len
+        h ^= h >>> 16
+        h = Math.imul(h, 0x85ebca6b)
+        h ^= h >>> 13
+        h = Math.imul(h, 0xc2b2ae35)
+        h ^= h >>> 16
+        return h >>> 0
     },
 
 /**
@@ -297,7 +323,13 @@ ConsistentHash.prototype = {
         if (k !== keys.length) keys.length = k
         // note: duplicate keys are not filtered out, but should work ok
         keys.sort(comparePoints)
-        return this._keys = keys
+        this._keys = keys
+        // parallel array of the node owning each sorted control point, so the hot
+        // lookup path can index by position instead of a _keyMap object lookup
+        var nodes = new Array(keys.length), map = this._keyMap
+        for (i=0; i<keys.length; i++) nodes[i] = map[keys[i]]
+        this._nodesSorted = nodes
+        return keys
     },
 
     // map the control points to point to the node
@@ -315,6 +347,72 @@ ConsistentHash.prototype = {
         array.pop()
     }
 **/
+}
+
+// Minimal O(1) LRU cache.  A doubly linked list keeps the recency order, so a
+// hit only relinks a couple of pointers instead of deleting and re-inserting
+// the key in a Map (which costs more than the hash lookup it saves).
+function LruCache( max ) {
+    this.max = max
+    this.map = new Map()
+    this.head = null            // most recently used entry
+    this.tail = null            // least recently used entry
+}
+
+LruCache.prototype = {
+    get:
+    function get( key ) {
+        var entry = this.map.get(key)
+        if (entry === undefined) return undefined
+        if (entry !== this.head) this._moveToHead(entry)
+        return entry.value
+    },
+
+    set:
+    function set( key, value ) {
+        var entry = this.map.get(key)
+        if (entry !== undefined) {
+            entry.value = value
+            if (entry !== this.head) this._moveToHead(entry)
+            return
+        }
+        entry = { key: key, value: value, prev: null, next: this.head }
+        if (this.head) this.head.prev = entry
+        this.head = entry
+        if (!this.tail) this.tail = entry
+        this.map.set(key, entry)
+        if (this.map.size > this.max) this._evictTail()
+    },
+
+    clear:
+    function clear( ) {
+        this.map.clear()
+        this.head = null
+        this.tail = null
+    },
+
+    _moveToHead:
+    function _moveToHead( entry ) {
+        var prev = entry.prev, next = entry.next
+        if (prev) prev.next = next
+        else this.head = next
+        if (next) next.prev = prev
+        else this.tail = prev
+        entry.prev = null
+        entry.next = this.head
+        if (this.head) this.head.prev = entry
+        this.head = entry
+    },
+
+    _evictTail:
+    function _evictTail( ) {
+        var tail = this.tail
+        if (!tail) return
+        this.map.delete(tail.key)
+        this.tail = tail.prev
+        if (this.tail) this.tail.next = null
+        else this.head = null
+    },
 }
 
 function addNodesArray( hashRing, nodes ) {

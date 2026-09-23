@@ -5,7 +5,7 @@ hashwheel
 
 This is a dependency-free javascript-only implementation of
 [consistent hashing](https://en.wikipedia.org/wiki/Consistent_hashing) hash
-ring.  Uses strings for hash keys, and hashes using a PJW hash variant.
+ring.  Uses strings for hash keys, and hashes using a MurmurHash3 variant.
 
 This implementation is pretty fast, and has a nice key distribution.
 
@@ -42,6 +42,10 @@ Options:
 - `orderNodes` - function to use to define the order of newly added nodes that need
   uniformly distributed control points assigned.  The function gets as input an array of nodes,
   and returns an array of nodes.  Default `undefined`, assign points in as-added order.
+- `cache` - enable a bounded LRU cache of this many `get()` results, default 0 (off).  Repeated
+  lookups of the same keys can be several times faster; keys that are never repeated just add
+  overhead, so leave it off for scan-like workloads.  The cache is dropped whenever a node is
+  added or removed.
 - `nodes` - an array of strings with nodes to add.  This is for convenience, it just adds the nodes
   one at a time with `this.add()`.  Default is none.
 

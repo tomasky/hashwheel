@@ -1,5 +1,5 @@
 /**
- * consistent-hash -- throughput benchmark
+ * hashwheel -- throughput benchmark
  *
  * Copyright (C) 2014-2015,2021,2023 Andras Radics
  * Licensed under the Apache License, Version 2.0
@@ -8,7 +8,7 @@
  * Run with:  node benchmark.js
  */
 
-import ConsistentHash from './consistenthash.js'
+import ConsistentHash from './hashwheel.js'
 
 var LOOKUPS = 1000000
 

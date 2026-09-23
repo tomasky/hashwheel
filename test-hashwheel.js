@@ -6,7 +6,7 @@
 import { describe, it, before, beforeEach } from 'node:test'
 import assert from 'node:assert'
 import { readFileSync } from 'node:fs'
-import ConsistentHash from './consistenthash.js'
+import ConsistentHash from './hashwheel.js'
 
 // format numbers in base 26 with digits 'a' .. 'z'
 function numBase26(n) {
@@ -39,7 +39,7 @@ describe('package', function() {
     })
 
     it('should export the class', async function() {
-        var index = await import('./consistenthash.js')
+        var index = await import('./hashwheel.js')
         assert.equal(index.default, ConsistentHash)
     })
 })
@@ -426,6 +426,47 @@ describe('regressions', function() {
         assert.equal(uut.nodeCount, n)
         assert.equal(uut.keyCount, n * uut._weightDefault)
         assert.ok(uut.get('resourceName'))
+    })
+})
+
+describe('cache', function() {
+    it('should return the same node with and without the cache', function() {
+        // uniform distribution so both rings get identical control points
+        var plain = new ConsistentHash({ distribution: 'uniform' })
+        var cached = new ConsistentHash({ distribution: 'uniform', cache: 100 })
+        for (var i = 0; i < 50; i++) { plain.add('node-' + i); cached.add('node-' + i) }
+        for (var i = 0; i < 500; i++) assert.equal(cached.get('key-' + i), plain.get('key-' + i))
+    })
+
+    it('should invalidate the cache when nodes are added or removed', function() {
+        var hr = new ConsistentHash({ cache: 10 })
+        hr.add('a')
+        hr.add('b')
+        hr.get('foo')
+        hr.remove('a')
+        hr.add('c')
+        // the cache must not serve a mapping that no longer exists
+        for (var i = 0; i < 200; i++) {
+            var n = hr.get('key-' + i)
+            assert.ok(n === 'b' || n === 'c', 'only live nodes')
+        }
+    })
+
+    it('should stay correct after the cache overflows', function() {
+        var hr = new ConsistentHash({ cache: 4 })
+        hr.add('a')
+        hr.add('b')
+        hr.add('c')
+        var first = []
+        for (var i = 0; i < 100; i++) first[i] = hr.get('k' + i)
+        for (var i = 0; i < 100; i++) assert.equal(hr.get('k' + i), first[i])
+    })
+
+    it('should not cache multi-node get', function() {
+        var hr = new ConsistentHash({ cache: 10 })
+        hr.add('a')
+        hr.add('b')
+        assert.equal(hr.get('foo', 2).length, 2)
     })
 })
 

@@ -1,5 +1,5 @@
 /**
- * consistent-hash -- key distribution probe (dev tool)
+ * hashwheel -- key distribution probe (dev tool)
  *
  * Copyright (C) 2015-2016,2021,2023 Andras Radics
  * Licensed under the Apache License, Version 2.0
@@ -8,7 +8,7 @@
  * Prints how evenly a set of generated keys spreads across N nodes.
  */
 
-import ConsistentHash from './consistenthash.js'
+import ConsistentHash from './hashwheel.js'
 
 var NBINS = [4, 10, 100]
 
