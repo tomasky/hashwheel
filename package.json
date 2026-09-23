@@ -1,6 +1,6 @@
 {
   "name": "hashwheel",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "js consistent hash ring",
   "license": "Apache-2.0",
   "type": "module",
@@ -8,14 +8,13 @@
   "exports": "./hashwheel.js",
   "repository": {
     "type": "git",
-    "url": "git://github.com/andrasq/consistent-hash-js"
+    "url": "git://github.com/tomasky/hashwheel"
   },
   "author": {
-    "name": "Andras",
-    "url": "http://github.com/andrasq"
+    "name": "Tomasky",
+    "url": "http://github.com/tomasky"
   },
   "keywords": [
-    "Andras",
     "consistent",
     "hash",
     "hashing",

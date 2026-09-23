@@ -1,7 +1,7 @@
 hashwheel
 =========
-[![Build Status](https://github.com/andrasq/consistent-hash-js/actions/workflows/nodejs.yml/badge.svg)](https://github.com/andrasq/consistent-hash-js/actions/workflows/nodejs.yml)
-[![Coverage Status](https://coveralls.io/repos/github/andrasq/consistent-hash-js/badge.svg?branch=master)](https://coveralls.io/github/andrasq/consistent-hash-js?branch=master)
+[![Build Status](https://github.com/tomasky/hashwheel/actions/workflows/nodejs.yml/badge.svg)](https://github.com/tomasky/hashwheel/actions/workflows/nodejs.yml)
+[![Coverage Status](https://coveralls.io/repos/github/tomasky/hashwheel/badge.svg?branch=master)](https://coveralls.io/github/tomasky/hashwheel?branch=master)
 
 This is a dependency-free javascript-only implementation of
 [consistent hashing](https://en.wikipedia.org/wiki/Consistent_hashing) hash
@@ -108,17 +108,6 @@ Todo
 ----
 
 - option to pass in the hash function to use
-
-
-Changelog
----------
-
-- 1.3.0 - new nodes option
-- 1.2.0 - new orderNodes option, new methods getNodes, getPoints
-- 1.1.2 - clear _needKeyMap once computed, new undocumented getNodes, getPoints
-- 1.1.1 - do not access unset _keyMap
-- 1.1.0 - `options.distribution`, fix multi-node get() that wraps around 0
-- 1.0.2 - 2016 version
 
 
 Related Work
